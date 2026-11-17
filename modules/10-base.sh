@@ -63,6 +63,16 @@ module_base() {
   elif [[ "${DRY_RUN:-false}" == true ]]; then info "+ copy Claude Desktop launcher to autostart"
   else warn "Claude Desktop launcher not found; add it in Startup Applications by hand."; fi
 
+  step "SSH: no X11, TCP or agent forwarding"
+  # Not needed for admin over SSH; removes tunnelling through the box. Ubuntu serves SSH via
+  # ssh.socket, so every new connection reads this file; no reload needed.
+  printf '%s\n' '# always-on-claude-box hardening' 'X11Forwarding no' 'AllowTcpForwarding no' 'AllowAgentForwarding no' \
+    | put /etc/ssh/sshd_config.d/10-always-on-box-hardening.conf 644 root
+  if [[ "${DRY_RUN:-false}" != true ]] && ! sudo sshd -t; then
+    sudo rm -f /etc/ssh/sshd_config.d/10-always-on-box-hardening.conf
+    warn "sshd rejected the hardening file; removed it, SSH left as it was."
+  fi
+
   step "Journal capped at 200 MB, file indexing off"
   printf '[Journal]\nSystemMaxUse=200M\n' | put /etc/systemd/journald.conf.d/99-size.conf 644 root
   run sudo systemctl restart systemd-journald

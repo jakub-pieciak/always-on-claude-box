@@ -8,8 +8,9 @@ module_remote_desktop() {
     run mkdir -p "$dir"
     run openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 \
       -subj "/CN=$(hostname)" -keyout "$dir/rdp-tls.key" -out "$dir/rdp-tls.crt" 2>/dev/null
-    run chmod 600 "$dir/rdp-tls.key"
   fi
+  # also tightens a key GNOME generated earlier (it creates it with mode 664)
+  run chmod 600 "$dir/rdp-tls.key"
   run grdctl rdp set-tls-cert "$dir/rdp-tls.crt"
   run grdctl rdp set-tls-key "$dir/rdp-tls.key"
   if [[ "${DRY_RUN:-false}" == true ]]; then

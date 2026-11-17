@@ -29,6 +29,7 @@ Google or Tailscale.
 | **PIN lock** | GNOME Shell extension: an opaque PIN prompt that grabs all input at login, after 5 min idle and on every RDP connect/disconnect. RDP keeps working and Claude keeps running behind it. Escalating lockout and an attempt log |
 | **Remote access** | Optional [Tailscale](https://tailscale.com) (WireGuard-based private network, no port forwarding) |
 | **Firewall** | `ufw`: SSH (22) and RDP (3389) only from your LAN and Tailscale; every other incoming connection is dropped |
+| **SSH hardening** | X11, TCP and agent forwarding off (`/etc/ssh/sshd_config.d/10-always-on-box-hardening.conf`, checked with `sshd -t`); RDP TLS key kept at mode 600 |
 | **Self-healing** | Daily reboot at a time you pick; health checks every 5 min (network, GDM, Tailscale, RDP, Chrome, Claude Desktop, disk, temperature); reboot on kernel panic; Intel hardware watchdog |
 | **Debloat** | Optional removal of snaps (incl. Firefox), printing, Bluetooth, modem manager, telemetry/crash reporting, VM/cloud tooling and unused desktop apps (≈ 280 packages, ~4 GB) |
 | **Monitoring** | Optional `btop` window at login (refresh 3 s, ~1 % CPU) |
@@ -160,6 +161,21 @@ credentials (or sits at the HDMI port) from using the desktop, Chrome or Claude.
 security boundary against someone with your **Ubuntu account password**: over SSH they can turn it
 off (that is the rescue path below). Keep SSH limited to your LAN and Tailscale (the firewall does
 this), and consider SSH keys with password login disabled.
+
+### Security review
+
+A read-only review of a box set up this way (privilege escalation, network exposure, file
+permissions, authentication) found no path to root and no port reachable from the internet. What
+remains is your call, because it needs your keys or your Tailscale account:
+
+| Finding | Severity | What to do |
+|---|---|---|
+| SSH accepts the account password from the LAN and from every device in your tailnet; that password is also the sudo password | Medium | Add an SSH key, then set `PasswordAuthentication no` (or install `fail2ban`) |
+| `ufw` allows all of `tailscale0`, so every tailnet device reaches SSH and RDP | Medium/low | Fine for a one-person tailnet; otherwise restrict 22/3389 with [Tailscale ACLs](https://tailscale.com/kb/1018/acls) |
+| The PIN is hashed with a single salted SHA-256; the lockout lives in a user-writable file | Low, by design | Use a longer PIN with letters (`pinlock-set`). It guards against RDP users, not against someone holding the account |
+| The RDP certificate is self-signed | Low | Check the fingerprint (`grdctl status`) on first connect |
+
+Fixed by the installer: forwarding is off in SSH, and the RDP TLS key is created with mode 600 (GNOME's own key generation leaves it at 664).
 
 ### Self-healing
 
