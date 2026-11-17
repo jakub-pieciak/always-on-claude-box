@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Daily 03:00 reboot. Waits (max 30 min) while apt/dpkg is working, so an update is never cut in half.
+set -u
+log() { logger -t daily-reboot "$*"; echo "$*"; }
+for i in $(seq 1 60); do
+  if fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1; then
+    [[ $i -eq 1 ]] && log "apt/dpkg is busy, waiting before reboot"
+    sleep 30
+  else
+    break
+  fi
+done
+log "Scheduled daily reboot (uptime: $(uptime -p))"
+sync
+exec systemctl reboot

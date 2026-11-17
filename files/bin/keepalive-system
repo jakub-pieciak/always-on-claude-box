@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# System health check, run as root every 5 minutes by keepalive-system.timer.
+# Logs go to the journal:  journalctl -t keepalive
+set -u
+STATE="${KEEPALIVE_STATE:-/var/lib/keepalive}"; mkdir -p "$STATE"
+log() { logger -t keepalive "$*"; }
+GW="$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')"
+
+# ---- network: restart NetworkManager after 2 failed checks, reboot after 6 (~30 min offline)
+net_ok() { { [[ -n "$GW" ]] && ping -c2 -W3 "$GW" >/dev/null 2>&1; } || ping -c2 -W3 1.1.1.1 >/dev/null 2>&1; }
+FAILS=$(cat "$STATE/net_fails" 2>/dev/null || echo 0)
+if net_ok; then
+  [[ $FAILS -gt 0 ]] && log "network back after $FAILS failed checks"
+  FAILS=0
+else
+  FAILS=$((FAILS + 1)); log "network check failed ($FAILS in a row, gateway ${GW:-none})"
+  if [[ $FAILS -eq 2 || $FAILS -eq 4 ]]; then
+    log "restarting NetworkManager"; systemctl restart NetworkManager
+  elif [[ $FAILS -ge 6 ]]; then
+    # at most one network-reboot per 6 h, so a dead router does not cause a reboot loop
+    LAST=$(cat "$STATE/net_reboot" 2>/dev/null || echo 0)
+    if (( $(date +%s) - LAST > 21600 )); then
+      date +%s > "$STATE/net_reboot"; echo 0 > "$STATE/net_fails"
+      log "network down ~30 min, rebooting"; systemctl reboot; exit 0
+    fi
+  fi
+fi
+echo "$FAILS" > "$STATE/net_fails"
+
+# ---- Tailscale (remote access from the internet): restart if the daemon is down or logged out of the network
+if command -v tailscale >/dev/null && (( FAILS == 0 )); then
+  if ! systemctl is-active --quiet tailscaled || \
+     ! tailscale status --json 2>/dev/null | grep -q '"BackendState": *"Running"'; then
+    log "Tailscale not running, restarting tailscaled"; systemctl restart tailscaled
+  fi
+fi
+
+# ---- graphical login (needed for RDP, Chrome and Claude)
+systemctl is-active --quiet gdm || { log "gdm not active, restarting it"; systemctl restart gdm; }
+
+# ---- disk: clean up when / is over 90 %
+USE=$(df --output=pcent / | tail -1 | tr -dc 0-9)
+if (( USE > 90 )); then
+  log "disk / at ${USE}%, cleaning journal and apt cache"
+  journalctl --vacuum-size=100M >/dev/null 2>&1; apt-get clean
+fi
+
+# ---- temperature and memory: warn only
+for h in /sys/class/hwmon/hwmon*; do
+  if [[ "$(cat "$h/name" 2>/dev/null)" == coretemp ]]; then
+    T=$(( $(cat "$h/temp1_input") / 1000 )); (( T >= 90 )) && log "WARNING: CPU at ${T}°C"
+  fi
+done
+AVAIL=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
+(( AVAIL < 500 )) && log "WARNING: only ${AVAIL} MB RAM available"
+exit 0

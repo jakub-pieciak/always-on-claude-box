@@ -1,0 +1,13 @@
+#!/bin/sh
+# Print Remote Desktop (3389) and SSH (22) connections that are open right now, one line, ';'-separated.
+# Tailscale addresses (100.x) get the device name. Used by the PIN lock log.
+ss -Htn state established '( sport = :3389 or sport = :22 )' 2>/dev/null |
+while read -r _ _ local peer _; do
+  port=${local##*:}
+  ip=${peer%:*}; ip=${ip#[}; ip=${ip%]}; ip=${ip#::ffff:}
+  case $port in 3389) svc=RDP ;; 22) svc=SSH ;; *) svc=$port ;; esac
+  name=""
+  case $ip in 100.*) name=$(tailscale whois --json "$ip" 2>/dev/null |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["Node"]["ComputedName"])' 2>/dev/null) ;; esac
+  echo "$svc from $ip${name:+ ($name)}"
+done | sort -u | paste -sd ';' -

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Desktop health check, run in the user session every 5 minutes by keepalive-user.timer.
+# Keeps Remote Desktop, Chrome and Claude Desktop running. Logs: journalctl --user -t keepalive-user
+set -u
+log() { logger -t keepalive-user "$*"; }
+# give the desktop time to start after login/reboot
+(( $(awk '{print int($1)}' /proc/uptime) < 300 )) && exit 0
+
+systemctl --user is-active --quiet gnome-remote-desktop || {
+  log "gnome-remote-desktop not active, restarting"; systemctl --user restart gnome-remote-desktop; }
+
+if ! pgrep -u "$USER" -f '/opt/google/chrome/chrome' >/dev/null; then
+  log "Chrome not running, starting it"
+  systemd-run --user --collect --quiet -- /usr/bin/google-chrome-stable --hide-crash-restore-bubble --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling
+fi
+if ! pgrep -u "$USER" -x claude-desktop >/dev/null && ! pgrep -u "$USER" -f '^/usr/lib/claude-desktop/claude-desktop$' >/dev/null; then
+  log "Claude Desktop not running, starting it"
+  systemd-run --user --collect --quiet -- claude-desktop
+fi
+exit 0

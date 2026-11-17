@@ -1,0 +1,7 @@
+{
+  "uuid": "pinlock@always-on-box",
+  "name": "PIN lock",
+  "description": "Covers the desktop with a PIN prompt (at login, after idle, on every Remote Desktop connect/disconnect) without locking the GNOME session, so Remote Desktop and background apps keep working.",
+  "shell-version": ["50"],
+  "version": 1
+}

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Set or change the PIN of the PIN lock. Type it twice; nothing is shown on screen.
+# A new PIN also clears the wrong-attempt counter and any active lockout.
+set -euo pipefail
+DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pinlock"; mkdir -p "$DIR"; chmod 700 "$DIR"
+read -rsp "New PIN (at least 4 characters): " A; echo
+read -rsp "Repeat the PIN: " B; echo
+[[ "$A" == "$B" ]] || { echo "The PINs differ. Nothing changed." >&2; exit 1; }
+[[ ${#A} -ge 4 ]] || { echo "The PIN is too short. Nothing changed." >&2; exit 1; }
+SALT="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+HASH="$(printf '%s' "$SALT$A" | sha256sum | cut -d' ' -f1)"
+unset A B
+(umask 077; printf '%s:%s\n' "$SALT" "$HASH" > "$DIR/pin.tmp") && mv "$DIR/pin.tmp" "$DIR/pin"
+rm -f "$DIR/state.json"
+LOG="${XDG_STATE_HOME:-$HOME/.local/state}/pinlock"; mkdir -p "$LOG"; chmod 700 "$LOG"
+echo "$(date '+%Y-%m-%d %H:%M:%S') | PIN CHANGED (pinlock-set), counter cleared | connections: $("$HOME/.local/bin/pinlock-conns" 2>/dev/null || echo ?)" >> "$LOG/attempts.log"
+echo "PIN saved (as a salted hash, not in plain text)."
